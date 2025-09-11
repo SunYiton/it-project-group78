@@ -1,28 +1,30 @@
-from flask import Flask, jsonify, request
+﻿from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os, datetime, jwt, json
 
 app = Flask(__name__)
 CORS(app)
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret")
-JWT_HOURS = int(os.environ.get("JWT_HOURS", "8"))
+# ====== JWT config ======
+JWT_SECRET  = os.environ.get("JWT_SECRET", "dev-secret")
+JWT_HOURS   = int(os.environ.get("JWT_HOURS", "8"))
+ALGORITHM   = "HS256"
 
-# health check
-@app.get("/health")
+# ====== health check ======
+@app.route("/health", methods=["GET"])
 def health():
     return jsonify(status="ok"), 200
 
-# login (mock)
-@app.post("/login")
+# ====== login (mock) ======
+@app.route("/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
     email = data.get("email")
     password = data.get("password")
 
     users = {
-        "coord@example.com": {"role": "coordinator", "password": "pass"},
-        "marker@example.com": {"role": "marker", "password": "pass"},
+        "coord@example.com":  {"role": "coordinator", "password": "pass"},
+        "marker@example.com": {"role": "marker",      "password": "pass"},
     }
 
     u = users.get(email)
@@ -30,18 +32,38 @@ def login():
         return jsonify(error={"code": 401, "message": "Invalid credentials"}), 401
 
     payload = {
-        "sub": email,
+        "sub":  email,
         "role": u["role"],
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=JWT_HOURS),
+        "exp":  datetime.datetime.utcnow() + datetime.timedelta(hours=JWT_HOURS),
     }
-    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+    token = jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
     return jsonify(token=token, role=u["role"])
 
-# assignments (mock + pagination)
-@app.get("/assignments")
+# ====== secure endpoint (JWT required) ======
+@app.route("/secure/ping", methods=["GET"])
+def secure_ping():
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return jsonify(detail="Missing or invalid Authorization header"), 401
+
+    token = auth.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        return jsonify(detail="Token expired"), 401
+    except jwt.InvalidTokenError:
+        return jsonify(detail="Invalid token"), 401
+
+    return jsonify(
+        status="ok",
+        user={"sub": payload.get("sub"), "role": payload.get("role")}
+    ), 200
+
+# ====== assignments (mock + pagination) ======
+@app.route("/assignments", methods=["GET"])
 def get_assignments():
-    status = request.args.get("status")  # current | history
-    page = int(request.args.get("page", "1"))
+    status    = request.args.get("status")
+    page      = int(request.args.get("page", "1"))
     page_size = int(request.args.get("pageSize", "20"))
 
     with open(os.path.join(os.path.dirname(__file__), "mock/assignments.json"), "r") as f:
@@ -52,7 +74,7 @@ def get_assignments():
 
     total = len(all_assignments)
     start = (page - 1) * page_size
-    end = start + page_size
+    end   = start + page_size
     items = all_assignments[start:end]
 
     return jsonify({
@@ -62,7 +84,18 @@ def get_assignments():
         "total": total
     }), 200
 
+# ====== debug: list all routes ======
+@app.route("/__routes", methods=["GET"])
+def list_routes():
+    return jsonify(sorted([str(r) for r in app.url_map.iter_rules()]))
 
-# start server when running "python app.py"
+# ====== entrypoint ======
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
+    print(">>> LOADED app.py from:", __file__)
+    print(">>> ROUTES at startup:", sorted([str(r) for r in app.url_map.iter_rules()]))
+    app.run(
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 5000)),
+        debug=True,
+        use_reloader=False
+    )
