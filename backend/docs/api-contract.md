@@ -1,250 +1,211 @@
-#Login
+# API Contract
 
-Auth token object
+## Login
+
+**Auth token object**
 {
-token: string (JWT HS256)
-role: string (coordinator|marker)
-}
+  "token": "<JWT>",
+  "role": "coordinator"
+} 
 
-POST /login
+### POST /login
 Creates a session and returns a JWT.
 
-URL Params
-None
+URL Params: None
+Headers: Content-Type: application/json
 
-Data Params
+Request Body
 {
-email: string
-password: string
+  "email": "coord@example.com",
+  "password": "pass"
 }
-
-Headers
-Content-Type: application/json
 
 Success Response:
 Code: 200
 Content:
 {
-token: "<JWT>",
-role: "coordinator"
+  "token": "<JWT>",
+  "role": "coordinator"
 }
 
 Error Response:
 Code: 401
-Content: { error: "Invalid credentials" }
+Content: 
+{ "error": { "code": 401, "message": "Invalid credentials" } }
 
-Notes
+## Assignments
 
-Test accounts (Week 7 mock): coord@example.com
- / pass, marker@example.com
- / pass
-
-JWT expiry: configured by server (e.g., 8 hours)
-
-#Assignments
-
-Assignment object
+Assignment object(schema)
 {
-id: string
-title: string
-dueDate: datetime (ISO 8601)
-status: string (current|history)
-discrepancyCount: integer
+  "id": "A-1001",
+  "title": "Essay 1",
+  "dueDate": "2025-09-01T00:00:00Z",
+  "status": "current",
+  "discrepancyCount": 2
 }
 
-GET /assignments
-Returns a paginated list of assignments (Week 7 mock).
 
-URL Params
-Optional:
-status=[current|history]
-page=[integer, default=1]
-pageSize=[integer, default=20]
+### GET /assignments
+Returns a paginated list of assignments.
 
-Data Params
-None
+Query
+status (optional): current | history
+page (int, default 1)
+pageSize (int, default 20)
 
 Headers
 Content-Type: application/json
-Authorization: Bearer <JWT Token> // optional in Week 7 mock; required later
+Authorization: Bearer <JWT>
 
 Success Response:
 Code: 200
 Content:
 {
-items: [
-{ <assignment_object> },
-{ <assignment_object> }
-],
-page: 1,
-pageSize: 20,
-total: 3
+  "items": [ { "id": "A-1001", "title": "Essay 1", "dueDate": "2025-09-01T00:00:00Z", "status": "current", "discrepancyCount": 2 } ],
+  "page": 1,
+  "pageSize": 20,
+  "total": 42
 }
 
 Error Response:
 Code: 401
-Content: { error: "Unauthorized" }
+Content: 
+{ "error": { "code": 401, "message": "Unauthorized" } }
 
-Notes
-
-Field names are frozen from Week 7. Only additive changes allowed later.
-
-#Moderations (Week 8 – to be defined)
+## Moderations (Week 8 – initial)
 
 Moderation object
 {
-id: string
-assignmentId: string
-studentId: string
-markerId: string
-rubric: [
-{
-criterion: string
-markerScore: number
-coordinatorScore: number
-delta: number
-}
-]
-overall: {
-markerTotal: number
-coordinatorTotal: number
-delta: number
-}
-status: string (open|resolved)
-createdAt: datetime (ISO 8601)
-updatedAt: datetime (ISO 8601)
+  "id": "M-1001",
+  "assignmentId": "A-1001",
+  "studentId": "S-1",
+  "markerId": "MK-1",
+  "rubric": [
+    { "criterion": "Clarity", "markerScore": 7, "coordinatorScore": 8, "delta": 1 }
+  ],
+  "overall": { "markerTotal": 70, "coordinatorTotal": 75, "delta": 5 },
+  "status": "open",
+  "createdAt": "2025-09-01T10:00:00Z",
+  "updatedAt": "2025-09-02T09:00:00Z"
 }
 
-GET /moderations/:id
+### GET /moderations/:id
 Returns the specified moderation detail.
 
 URL Params
-Required: id=[string]
-
-Data Params
-None
+id(string)
 
 Headers
 Content-Type: application/json
-Authorization: Bearer <JWT Token>
+Authorization: Bearer <JWT>
 
 Success Response:
 Code: 200
-Content: { <moderation_object> }
+Content: 
+{ "...": "moderation_object" }
 
 Error Response:
 Code: 404
-Content: { error: "Moderation not found" }
-OR
-Code: 401
-Content: { error: "Unauthorized" }
+Content: 
+{ "error": { "code": 404, "message": "Moderation not found" } }
+{ "error": { "code": 401, "message": "Unauthorized" } }
 
-POST /moderations/:id/resolve
-(Week 8) Resolve a moderation with coordinator’s decision.
+### POST /moderations/:id/resolve
+Resolve a moderation with coordinator’s decision.(role:coordinator)
 
-URL Params
-Required: id=[string]
-
-Data Params
-{
-coordinatorNotes: string
-adjustedScores: [
-{ criterion: string, coordinatorScore: number }
-]
-}
+URL Params: id(string)
 
 Headers
 Content-Type: application/json
-Authorization: Bearer <JWT Token> // role=coordinator
+Authorization: Bearer <JWT>
 
 Success Response:
 Code: 200
-Content: { id: "M-1001", status: "resolved", updatedAt: "2025-10-12T09:30:00Z" }
+Content: 
+{
+  "coordinatorNotes": "Adjust based on rubric discussion.",
+  "adjustedScores": [
+    { "criterion": "Clarity", "coordinatorScore": 8 }
+  ]
+}
+
+Code: 201
+Content:
+{ "id": "M-1001", "status": "resolved", "updatedAt": "2025-10-12T09:30:00Z" }
 
 Error Response:
-Code: 400/401/403/404 with error message
+Code: 400/401/403/404
+{ "error": { "code": 400, "message": "Invalid payload" } }
 
-#Feedback (Week 8 – to be defined)
+## Feedback (Week 8 – initial)
 
 Feedback object
 {
-id: string
-markerId: string
-assignmentId: string
-moderationId: string
-message: string
-createdAt: datetime (ISO 8601)
+  "id": "F-1",
+  "markerId": "MK-1",
+  "assignmentId": "A-1001",
+  "moderationId": "M-1001",
+  "message": "Please align with rubric criterion #2",
+  "createdAt": "2025-09-03T11:00:00Z"
 }
 
-POST /feedback
-Creates a feedback entry from coordinator to marker.
-
-URL Params
-None
-
-Data Params
-{
-markerId: string
-assignmentId: string
-moderationId: string
-message: string
-}
+### POST /feedback
+Creates a feedback entry from coordinator to marker. (role: coordinator)
 
 Headers
 Content-Type: application/json
-Authorization: Bearer <JWT Token> // role=coordinator
+Authorization: Bearer <JWT>
 
 Success Response:
 Code: 200
-Content: { <feedback_object> }
+Content: 
+{
+  "id": "F-1",
+  "markerId": "MK-1",
+  "assignmentId": "A-1001",
+  "moderationId": "M-1001",
+  "message": "Please align with rubric criterion #2",
+  "createdAt": "2025-09-03T11:00:00Z"
+}
+
 
 Error Response:
 Code: 400
-Content: { error: "Invalid payload" }
-OR
+Content: 
+{ "error": { "code": 400, "message": "Invalid payload" } }
 Code: 401/403
-Content: { error: "Unauthorized" }
+Content: 
+{ "error": { "code": 401, "message": "Unauthorized" } }
 
-GET /feedback
+### GET /feedback
 Returns a paginated list of feedback entries.
 
-URL Params
-Optional:
-markerId=[string]
-assignmentId=[string]
-page=[integer, default=1]
-pageSize=[integer, default=20]
-
-Data Params
-None
+Query (optional)
+    markerId (string)
+    assignmentId (string)
+    page (int, default 1)
+    pageSize (int, default 20)
 
 Headers
-Content-Type: application/json
-Authorization: Bearer <JWT Token>
+    Authorization: Bearer <JWT>
 
 Success Response:
 Code: 200
 Content:
 {
-items: [
-{ <feedback_object> }
-],
-page: 1,
-pageSize: 20,
-total: 1
+  "items": [ { "...": "feedback_object" } ],
+  "page": 1,
+  "pageSize": 20,
+  "total": 1
 }
 
-#Error Format (consistent JSON)
-Simple:
-{ error: "Unauthorized" }
+Error Format (Unified)
+{ "error": { "code": 401, "message": "Unauthorized" } }
 
-Detailed:
-{ error: { code: 401, message: "Unauthorized" } }
+## Change Policy
+    Field names frozen from Week 7 for Login and Assignments.
 
-#Change Policy
+    Only additive changes allowed (new fields); no renaming/removal without FE/DB agreement.
 
-Field names are frozen from Week 7 for Login and Assignments.
-
-Only additive changes allowed (new fields).
-
-No renaming or removal without agreement from FE/DB.
+## Change Log
+    2025-09-15 — /assignments data access refactored to Repository layer (default backend: mock; contract unchanged). Future switch via DATA_BACKEND=sqlite|db.

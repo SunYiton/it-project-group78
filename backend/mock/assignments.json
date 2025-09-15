@@ -1,5 +1,8 @@
 [
-  {"id":"A1","title":"Essay 1","dueDate":"2025-10-01","status":"current","discrepancyCount":2},
-  {"id":"A2","title":"Report 1","dueDate":"2025-11-01","status":"current","discrepancyCount":0},
-  {"id":"A3","title":"Essay 0","dueDate":"2025-08-01","status":"history","discrepancyCount":1}
+  {"id":"A-1001","title":"Essay 1","dueDate":"2025-09-01T00:00:00Z","status":"current","discrepancyCount":2},
+  {"id":"A-1002","title":"Report 1","dueDate":"2025-08-25T00:00:00Z","status":"current","discrepancyCount":0},
+  {"id":"A-1003","title":"Case Study","dueDate":"2025-07-15T00:00:00Z","status":"history","discrepancyCount":1},
+  {"id":"A-1004","title":"Reflection","dueDate":"2025-06-10T00:00:00Z","status":"history","discrepancyCount":0},
+  {"id":"A-1005","title":"Lab 1","dueDate":"2025-09-10T00:00:00Z","status":"current","discrepancyCount":3},
+  {"id":"A-1006","title":"Quiz 1","dueDate":"2025-08-05T00:00:00Z","status":"history","discrepancyCount":0}
 ]

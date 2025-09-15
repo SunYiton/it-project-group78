@@ -1,101 +1,132 @@
-﻿from flask import Flask, jsonify, request
+﻿# app.py
+from flask import Flask, jsonify, request, g
 from flask_cors import CORS
-import os, datetime, jwt, json
+import os, datetime, jwt
 
-app = Flask(__name__)
-CORS(app)
+# config
+JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret")
+JWT_HOURS = int(os.environ.get("JWT_HOURS", "8"))
 
-# ====== JWT config ======
-JWT_SECRET  = os.environ.get("JWT_SECRET", "dev-secret")
-JWT_HOURS   = int(os.environ.get("JWT_HOURS", "8"))
-ALGORITHM   = "HS256"
+def create_app():
+    app = Flask(__name__)
+    CORS(app)
 
-# ====== health check ======
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify(status="ok"), 200
+    # helpers
+    def json_error(code: int, message: str):
+        resp = jsonify(error={"code": code, "message": message})
+        resp.status_code = code
+        return resp
 
-# ====== login (mock) ======
-@app.route("/login", methods=["POST"])
-def login():
-    data = request.get_json() or {}
-    email = data.get("email")
-    password = data.get("password")
+    # auth decorators (JWT)
+    def require_auth(fn):
+        from functools import wraps
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            auth = request.headers.get("Authorization", "")
+            prefix = "Bearer "
+            if not auth.startswith(prefix):
+                return json_error(401, "Missing or invalid Authorization header")
+            token = auth[len(prefix):].strip()
+            try:
+                payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+            except jwt.ExpiredSignatureError:
+                return json_error(401, "Token expired")
+            except jwt.InvalidTokenError:
+                return json_error(401, "Invalid token")
 
-    users = {
-        "coord@example.com":  {"role": "coordinator", "password": "pass"},
-        "marker@example.com": {"role": "marker",      "password": "pass"},
-    }
+            g.user = {
+                "email": payload.get("sub"),
+                "role": payload.get("role"),
+            }
+            return fn(*args, **kwargs)
+        return wrapper
 
-    u = users.get(email)
-    if not u or u["password"] != password:
-        return jsonify(error={"code": 401, "message": "Invalid credentials"}), 401
+    def require_role(role: str):
+        def decorator(fn):
+            from functools import wraps
+            @wraps(fn)
+            def wrapper(*args, **kwargs):
+                auth = request.headers.get("Authorization", "")
+                if not auth.startswith("Bearer "):
+                    return json_error(401, "Missing or invalid Authorization header")
+                token = auth[len("Bearer "):].strip()
+                try:
+                    payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+                except jwt.ExpiredSignatureError:
+                    return json_error(401, "Token expired")
+                except jwt.InvalidTokenError:
+                    return json_error(401, "Invalid token")
 
-    payload = {
-        "sub":  email,
-        "role": u["role"],
-        "exp":  datetime.datetime.utcnow() + datetime.timedelta(hours=JWT_HOURS),
-    }
-    token = jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)
-    return jsonify(token=token, role=u["role"])
+                user_role = payload.get("role")
+                if user_role != role:
+                    return json_error(403, f"Forbidden: requires role '{role}'")
+                g.user = {"email": payload.get("sub"), "role": user_role}
+                return fn(*args, **kwargs)
+            return wrapper
+        return decorator
 
-# ====== secure endpoint (JWT required) ======
-@app.route("/secure/ping", methods=["GET"])
-def secure_ping():
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        return jsonify(detail="Missing or invalid Authorization header"), 401
+    # health
+    @app.get("/health")
+    def health():
+        return jsonify(status="ok"), 200
 
-    token = auth.split(" ", 1)[1]
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
-    except jwt.ExpiredSignatureError:
-        return jsonify(detail="Token expired"), 401
-    except jwt.InvalidTokenError:
-        return jsonify(detail="Invalid token"), 401
+    # login (mock)
+    @app.post("/login")
+    def login():
+        data = request.get_json() or {}
+        email = data.get("email")
+        password = data.get("password")
 
-    return jsonify(
-        status="ok",
-        user={"sub": payload.get("sub"), "role": payload.get("role")}
-    ), 200
+        # mock users
+        users = {
+            "coord@example.com": {"role": "coordinator", "password": "pass"},
+            "marker@example.com": {"role": "marker", "password": "pass"},
+        }
 
-# ====== assignments (mock + pagination) ======
-@app.route("/assignments", methods=["GET"])
-def get_assignments():
-    status    = request.args.get("status")
-    page      = int(request.args.get("page", "1"))
-    page_size = int(request.args.get("pageSize", "20"))
+        u = users.get(email)
+        if not u or u["password"] != password:
+            return json_error(401, "Invalid credentials")
 
-    with open(os.path.join(os.path.dirname(__file__), "mock/assignments.json"), "r") as f:
-        all_assignments = json.load(f)
+        payload = {
+            "sub": email,
+            "role": u["role"],
+            "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=JWT_HOURS),
+        }
+        token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+        return jsonify(token=token, role=u["role"])
 
-    if status:
-        all_assignments = [a for a in all_assignments if a.get("status") == status]
+    # protected demo route
+    @app.get("/secure/ping")
+    @require_auth
+    def secure_ping():
+        # g.user set by require_auth
+        return jsonify(message="pong", user=g.get("user")), 200
 
-    total = len(all_assignments)
-    start = (page - 1) * page_size
-    end   = start + page_size
-    items = all_assignments[start:end]
+    # Example of role-protected route (only coordinator)
+    @app.get("/secure/admin-only")
+    @require_role("coordinator")
+    def admin_only():
+        return jsonify(message="hello, coordinator"), 200
 
-    return jsonify({
-        "items": items,
-        "page": page,
-        "pageSize": page_size,
-        "total": total
-    }), 200
+    # register blueprints
+    from routes.assignments import bp as assignments_bp
+    app.register_blueprint(assignments_bp)
 
-# ====== debug: list all routes ======
-@app.route("/__routes", methods=["GET"])
-def list_routes():
-    return jsonify(sorted([str(r) for r in app.url_map.iter_rules()]))
+    # error handlers (json)
+    @app.errorhandler(404)
+    def not_found(_e):
+        return json_error(404, "Not found")
 
-# ====== entrypoint ======
+    @app.errorhandler(500)
+    def server_error(e):
+        # optional: log e
+        return json_error(500, "Internal server error")
+
+    return app
+
+
 if __name__ == "__main__":
-    print(">>> LOADED app.py from:", __file__)
-    print(">>> ROUTES at startup:", sorted([str(r) for r in app.url_map.iter_rules()]))
-    app.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000)),
-        debug=True,
-        use_reloader=False
-    )
+    # local dev run
+    app = create_app()
+    # set host="0.0.0.0" if needed
+    app.run(debug=True)
